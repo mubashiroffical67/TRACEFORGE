@@ -1,0 +1,203 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique
+  name       String
+  createdAt  DateTime    @default(now())
+  incidents  Incident[]
+}
+
+model Repository {
+  id          String     @id @default(cuid())
+  name        String
+  url         String?
+  branch      String     @default("main")
+  isDemo      Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  incidents   Incident[]
+}
+
+model Incident {
+  id               String          @id @default(cuid())
+  incidentId       String          @unique  // e.g. INC-0042
+  title            String
+  description      String
+  severity         String          // CRITICAL, HIGH, MEDIUM, LOW
+  status           String          @default("OPEN") // OPEN, INVESTIGATING, RESOLVED, CLOSED
+  errorMessage     String?
+  stackTrace       String?
+  logs             String?
+  affectedService  String?
+  expectedBehavior String?
+  actualBehavior   String?
+  repositoryId     String?
+  userId           String?
+  isDemo           Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  resolvedAt       DateTime?
+
+  repository       Repository?     @relation(fields: [repositoryId], references: [id])
+  user             User?           @relation(fields: [userId], references: [id])
+  investigation    Investigation?
+  knowledgeCard    KnowledgeCard?
+}
+
+model Investigation {
+  id                   String                @id @default(cuid())
+  incidentId           String                @unique
+  status               String                @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  currentStep          String?
+  iterationCount       Int                   @default(0)
+  maxIterations        Int                   @default(3)
+  startedAt            DateTime              @default(now())
+  completedAt          DateTime?
+  
+  incident             Incident              @relation(fields: [incidentId], references: [id])
+  evidenceItems        Evidence[]
+  hypotheses           RootCauseHypothesis[]
+  patch                Patch?
+  testResult           TestResult?
+  securityFindings     SecurityFinding[]
+  review               Review?
+  timelineEvents       TimelineEvent[]
+}
+
+model Evidence {
+  id              String        @id @default(cuid())
+  investigationId String
+  type            String        // STACK_TRACE, LOG, FILE, CODE_PATH, TEST, CONFIG
+  title           String
+  content         String
+  filePath        String?
+  lineNumber      Int?
+  relevance       String        // HIGH, MEDIUM, LOW
+  createdAt       DateTime      @default(now())
+
+  investigation   Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model RootCauseHypothesis {
+  id                  String        @id @default(cuid())
+  investigationId     String
+  rank                Int
+  explanation         String
+  confidence          String        // HIGH, MEDIUM, LOW
+  confidenceScore     Float?
+  supportingEvidence  String        // JSON array
+  contradictingEvidence String      @default("[]")
+  missingEvidence     String        @default("[]")
+  affectedFiles       String        // JSON array
+  affectedFunctions   String        @default("[]")
+  assumptions         String        @default("[]")
+  isPrimary           Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+
+  investigation       Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model Patch {
+  id              String        @id @default(cuid())
+  investigationId String        @unique
+  summary         String
+  rationale       String
+  fileDiffs       String        // JSON array of FileDiff objects
+  linesAdded      Int           @default(0)
+  linesRemoved    Int           @default(0)
+  filesModified   Int           @default(0)
+  riskLevel       String        @default("LOW") // LOW, MEDIUM, HIGH
+  createdAt       DateTime      @default(now())
+
+  investigation   Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model TestResult {
+  id                  String        @id @default(cuid())
+  investigationId     String        @unique
+  existingPassed      Int           @default(0)
+  existingTotal       Int           @default(0)
+  newTestsPassed      Int           @default(0)
+  newTestsTotal       Int           @default(0)
+  edgeCasesPassed     Int           @default(0)
+  edgeCasesTotal      Int           @default(0)
+  generatedTests      String        // JSON array of GeneratedTest objects
+  coverageInfo        String?
+  regressionRisk      String        @default("LOW")
+  executionStatus     String        @default("SIMULATED") // SIMULATED, EXECUTED, FAILED
+  createdAt           DateTime      @default(now())
+
+  investigation       Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model SecurityFinding {
+  id              String        @id @default(cuid())
+  investigationId String
+  category        String        // INJECTION, AUTH, INPUT_VALIDATION, SECRETS, etc.
+  severity        String        // PASS, WARNING, FAIL, INFO
+  title           String
+  description     String
+  affectedCode    String?
+  recommendation  String
+  createdAt       DateTime      @default(now())
+
+  investigation   Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model Review {
+  id              String        @id @default(cuid())
+  investigationId String        @unique
+  outcome         String        // APPROVED, NEEDS_REVISION, INSUFFICIENT_EVIDENCE
+  reasoning       String
+  addressesRootCause  Boolean
+  sufficientEvidence  Boolean
+  regressionRisk      String
+  testsSufficient     Boolean
+  securityClear       Boolean
+  simplificationNote  String?
+  createdAt       DateTime      @default(now())
+
+  investigation   Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model TimelineEvent {
+  id              String        @id @default(cuid())
+  investigationId String
+  step            String
+  description     String
+  status          String        // PENDING, RUNNING, COMPLETED, FAILED
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+
+  investigation   Investigation @relation(fields: [investigationId], references: [id])
+}
+
+model KnowledgeCard {
+  id                      String    @id @default(cuid())
+  incidentId              String    @unique
+  rootCauseSummary        String
+  affectedComponents      String    // JSON
+  affectedFiles           String    // JSON
+  fixSummary              String
+  testsAdded              Int
+  securityStatus          String
+  reviewOutcome           String
+  verificationStatus      String
+  preventionRecommendations String  // JSON
+  similarPatterns         String    @default("[]")
+  documentationNotes      String    @default("")
+  createdAt               DateTime  @default(now())
+
+  incident                Incident  @relation(fields: [incidentId], references: [id])
+}
